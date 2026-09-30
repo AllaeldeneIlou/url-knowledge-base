@@ -7,6 +7,8 @@ from urllib.parse import unquote, urlsplit
 
 from url_kb.ingest.normalize import NormalizedURL
 
+REVIEW_STATUSES = frozenset({"pending_review", "reviewed", "rejected"})
+
 
 @dataclass(frozen=True)
 class StoredURLRecord:
@@ -180,17 +182,100 @@ class SQLiteURLRepository:
             ).fetchall()
 
         return [
-            StoredURLRecord(
-                id=row["id"],
-                original_url=row["original_url"],
-                canonical_url=row["canonical_url"],
-                domain=row["domain"],
-                url_hash=row["url_hash"],
-                source_file=row["source_file"],
-                review_status=row["review_status"],
-            )
+            _stored_url_record_from_row(row)
             for row in rows
         ]
+
+    def search_url_records(
+        self,
+        *,
+        query: str | None = None,
+        domain: str | None = None,
+        review_status: str | None = None,
+    ) -> list[StoredURLRecord]:
+        if review_status is not None:
+            validate_review_status(review_status)
+
+        conditions: list[str] = []
+        parameters: list[str] = []
+
+        if query:
+            like_query = f"%{query}%"
+            conditions.append(
+                """
+                (
+                    original_url LIKE ?
+                    OR canonical_url LIKE ?
+                    OR domain LIKE ?
+                    OR source_file LIKE ?
+                )
+                """
+            )
+            parameters.extend([like_query, like_query, like_query, like_query])
+
+        if domain:
+            conditions.append("domain = ?")
+            parameters.append(domain)
+
+        if review_status:
+            conditions.append("review_status = ?")
+            parameters.append(review_status)
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                    id,
+                    original_url,
+                    canonical_url,
+                    domain,
+                    url_hash,
+                    source_file,
+                    review_status
+                FROM url_records
+                {where_clause}
+                ORDER BY id
+                """,
+                parameters,
+            ).fetchall()
+
+        return [_stored_url_record_from_row(row) for row in rows]
+
+    def update_review_status(self, record_id: int, review_status: str) -> StoredURLRecord | None:
+        validate_review_status(review_status)
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE url_records
+                SET review_status = ?
+                WHERE id = ?
+                """,
+                (review_status, record_id),
+            )
+
+            if cursor.rowcount == 0:
+                return None
+
+            row = connection.execute(
+                """
+                SELECT
+                    id,
+                    original_url,
+                    canonical_url,
+                    domain,
+                    url_hash,
+                    source_file,
+                    review_status
+                FROM url_records
+                WHERE id = ?
+                """,
+                (record_id,),
+            ).fetchone()
+
+        return _stored_url_record_from_row(row)
 
     def list_ingest_runs(self) -> list[StoredIngestRun]:
         with self._connect() as connection:
@@ -260,3 +345,21 @@ def parse_sqlite_database_url(database_url: str) -> str:
         path = path[1:]
 
     return path
+
+
+def validate_review_status(review_status: str) -> None:
+    if review_status not in REVIEW_STATUSES:
+        allowed = ", ".join(sorted(REVIEW_STATUSES))
+        raise ValueError(f"review_status must be one of: {allowed}")
+
+
+def _stored_url_record_from_row(row: sqlite3.Row) -> StoredURLRecord:
+    return StoredURLRecord(
+        id=row["id"],
+        original_url=row["original_url"],
+        canonical_url=row["canonical_url"],
+        domain=row["domain"],
+        url_hash=row["url_hash"],
+        source_file=row["source_file"],
+        review_status=row["review_status"],
+    )

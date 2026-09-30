@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from url_kb.ingest.service import ingest_batch
+from url_kb.search.service import search_sources, update_review_status
 from url_kb.storage.sqlite_repo import SQLiteURLRepository
 
 DEFAULT_DATABASE_URL = "sqlite:///./data/url_kb.sqlite3"
@@ -18,6 +19,27 @@ def main() -> None:
     if args.command == "ingest_batch":
         repository = SQLiteURLRepository.from_database_url(args.database_url)
         result = ingest_batch(args.csv_path, repository)
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return
+
+    if args.command == "search_sources":
+        repository = SQLiteURLRepository.from_database_url(args.database_url)
+        result = search_sources(
+            repository,
+            query=args.query,
+            domain=args.domain,
+            review_status=args.review_status,
+        )
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return
+
+    if args.command == "update_review_status":
+        repository = SQLiteURLRepository.from_database_url(args.database_url)
+        result = update_review_status(
+            repository,
+            record_id=args.record_id,
+            review_status=args.review_status,
+        )
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
         return
 
@@ -37,6 +59,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="CSV file with a url column",
     )
     ingest_parser.add_argument(
+        "--database-url",
+        default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
+        help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
+    )
+
+    search_parser = subparsers.add_parser("search_sources", help="Search persisted URL records")
+    search_parser.add_argument("--query", help="Keyword query over URL/domain/source fields")
+    search_parser.add_argument("--domain", help="Exact domain filter")
+    search_parser.add_argument(
+        "--review-status",
+        choices=["pending_review", "reviewed", "rejected"],
+        help="Review status filter",
+    )
+    search_parser.add_argument(
+        "--database-url",
+        default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
+        help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
+    )
+
+    update_parser = subparsers.add_parser(
+        "update_review_status",
+        help="Update a persisted URL record review status",
+    )
+    update_parser.add_argument("record_id", type=int, help="Persisted url_records.id value")
+    update_parser.add_argument(
+        "review_status",
+        choices=["pending_review", "reviewed", "rejected"],
+        help="New review status",
+    )
+    update_parser.add_argument(
         "--database-url",
         default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
         help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
