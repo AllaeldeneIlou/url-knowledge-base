@@ -38,16 +38,39 @@ def ingest_batch(csv_path: Path, repository: SQLiteURLRepository) -> IngestBatch
 
     parsed = parse_url_csv(csv_path)
     unique_urls = dedupe_normalized(parsed.valid)
-    batch_duplicate_count = len(parsed.valid) - len(unique_urls)
+    batch_duplicate_count = len(parsed.records) - len(unique_urls)
     inserted_count = 0
     existing_duplicate_count = 0
+    seen_batch_canonical_urls: set[str] = set()
 
-    for url in unique_urls:
-        inserted, _record_id = repository.insert_url_record(url, source_file=source_file)
+    for record in parsed.records:
+        url = record.normalized_url
+        is_batch_duplicate = url.canonical_url in seen_batch_canonical_urls
+        if not is_batch_duplicate:
+            seen_batch_canonical_urls.add(url.canonical_url)
+
+        inserted, record_id = repository.insert_url_record(
+            url,
+            source_file=source_file,
+            title=record.original_label,
+            original_label=record.original_label,
+            source_type=record.source_type,
+            raw_imported_status=record.raw_imported_status,
+        )
         if inserted:
             inserted_count += 1
-        else:
+        elif not is_batch_duplicate:
             existing_duplicate_count += 1
+
+        repository.insert_source_occurrence(
+            url_record_id=record_id,
+            source_file=source_file,
+            source_format="csv_url_column",
+            original_url=url.original_url,
+            original_label=record.original_label,
+            row_number=record.row_number,
+            raw_imported_status=record.raw_imported_status,
+        )
 
     malformed_count = len(parsed.errors)
     failed_count = malformed_count
