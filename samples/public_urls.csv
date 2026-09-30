@@ -1,0 +1,8 @@
+url,title,source
+https://docs.python.org/3/library/urllib.parse.html,Python urllib.parse documentation,public_sample
+https://fastapi.tiangolo.com/,FastAPI documentation,public_sample
+https://www.sqlite.org/fts5.html,SQLite FTS5 documentation,public_sample
+https://docs.pytest.org/en/stable/,pytest documentation,public_sample
+https://docs.astral.sh/ruff/,Ruff documentation,public_sample
+https://docs.python.org/3/library/urllib.parse.html#url-parsing,Python urllib.parse duplicate with fragment,public_sample
+not a url,Malformed example,public_sample
