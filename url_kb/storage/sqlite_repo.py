@@ -8,6 +8,7 @@ from urllib.parse import unquote, urlsplit
 from url_kb.ingest.normalize import NormalizedURL
 
 REVIEW_STATUSES = frozenset({"pending_review", "reviewed", "rejected"})
+ENRICHMENT_REVIEW_STATUSES = frozenset({"pending_review", "approved", "rejected"})
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,15 @@ class StoredAIEnrichment:
     token_output_count: int | None
     estimated_cost_usd: float | None
     error_class: str | None
+    created_at: str
+    reviewed_at: str | None
+    reviewer_note: str | None
+
+
+@dataclass(frozen=True)
+class StoredAIEnrichmentWithURL:
+    enrichment: StoredAIEnrichment
+    url_record: StoredURLRecord
 
 
 class SQLiteURLRepository:
@@ -156,6 +166,8 @@ class SQLiteURLRepository:
                     token_output_count INTEGER,
                     estimated_cost_usd REAL,
                     error_class TEXT,
+                    reviewed_at TEXT,
+                    reviewer_note TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (url_record_id) REFERENCES url_records(id) ON DELETE CASCADE
                 );
@@ -566,6 +578,8 @@ class SQLiteURLRepository:
         estimated_cost_usd: float | None = None,
         error_class: str | None = None,
     ) -> int:
+        validate_enrichment_review_status(status)
+
         with self._connect() as connection:
             cursor = connection.execute(
                 """
@@ -619,13 +633,127 @@ class SQLiteURLRepository:
                     token_input_count,
                     token_output_count,
                     estimated_cost_usd,
-                    error_class
+                    error_class,
+                    created_at,
+                    reviewed_at,
+                    reviewer_note
                 FROM ai_enrichments
                 ORDER BY id
                 """
             ).fetchall()
 
         return [_stored_ai_enrichment_from_row(row) for row in rows]
+
+    def list_ai_enrichments_with_urls(
+        self,
+        *,
+        status: str | None = None,
+        provider: str | None = None,
+        limit: int | None = None,
+    ) -> list[StoredAIEnrichmentWithURL]:
+        if status is not None:
+            validate_enrichment_review_status(status)
+        if limit is not None and limit < 1:
+            raise ValueError("limit must be at least 1")
+
+        conditions: list[str] = []
+        parameters: list[str | int] = []
+
+        if status:
+            conditions.append("e.status = ?")
+            parameters.append(status)
+
+        if provider:
+            conditions.append("e.provider = ?")
+            parameters.append(provider)
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        limit_clause = ""
+        if limit is not None:
+            limit_clause = "LIMIT ?"
+            parameters.append(limit)
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                    e.id AS enrichment_id,
+                    e.run_id,
+                    e.url_record_id,
+                    e.provider,
+                    e.model,
+                    e.prompt_version,
+                    e.input_hash,
+                    e.status,
+                    e.output_json,
+                    e.token_input_count,
+                    e.token_output_count,
+                    e.estimated_cost_usd,
+                    e.error_class,
+                    e.created_at AS enrichment_created_at,
+                    e.reviewed_at,
+                    e.reviewer_note,
+                    r.id AS record_id,
+                    r.original_url,
+                    r.canonical_url,
+                    r.domain,
+                    r.url_hash,
+                    r.source_file,
+                    r.review_status,
+                    r.title,
+                    r.original_label,
+                    r.source_type,
+                    r.raw_imported_status
+                FROM ai_enrichments e
+                JOIN url_records r ON r.id = e.url_record_id
+                {where_clause}
+                ORDER BY e.id
+                {limit_clause}
+                """,
+                parameters,
+            ).fetchall()
+
+        return [_stored_ai_enrichment_with_url_from_row(row) for row in rows]
+
+    def get_ai_enrichment_with_url(
+        self, enrichment_id: int
+    ) -> StoredAIEnrichmentWithURL | None:
+        matches = self._select_ai_enrichments_with_urls_by_id(enrichment_id)
+        return matches[0] if matches else None
+
+    def update_ai_enrichment_review(
+        self,
+        *,
+        enrichment_id: int,
+        status: str,
+        reviewed_at: str,
+        reviewer_note: str | None = None,
+    ) -> tuple[StoredAIEnrichmentWithURL, str] | None:
+        validate_enrichment_review_status(status)
+
+        with self._connect() as connection:
+            previous = connection.execute(
+                "SELECT status FROM ai_enrichments WHERE id = ?",
+                (enrichment_id,),
+            ).fetchone()
+            if previous is None:
+                return None
+
+            connection.execute(
+                """
+                UPDATE ai_enrichments
+                SET status = ?,
+                    reviewed_at = ?,
+                    reviewer_note = ?
+                WHERE id = ?
+                """,
+                (status, reviewed_at, reviewer_note, enrichment_id),
+            )
+
+        updated = self.get_ai_enrichment_with_url(enrichment_id)
+        if updated is None:
+            return None
+        return updated, str(previous["status"])
 
     def count_ai_enrichments(self) -> int:
         with self._connect() as connection:
@@ -674,6 +802,8 @@ class SQLiteURLRepository:
         }
         column_definitions = {
             "run_id": "TEXT",
+            "reviewed_at": "TEXT",
+            "reviewer_note": "TEXT",
         }
 
         for column_name, column_type in column_definitions.items():
@@ -681,6 +811,50 @@ class SQLiteURLRepository:
                 connection.execute(
                     f"ALTER TABLE ai_enrichments ADD COLUMN {column_name} {column_type}"
                 )
+
+    def _select_ai_enrichments_with_urls_by_id(
+        self, enrichment_id: int
+    ) -> list[StoredAIEnrichmentWithURL]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    e.id AS enrichment_id,
+                    e.run_id,
+                    e.url_record_id,
+                    e.provider,
+                    e.model,
+                    e.prompt_version,
+                    e.input_hash,
+                    e.status,
+                    e.output_json,
+                    e.token_input_count,
+                    e.token_output_count,
+                    e.estimated_cost_usd,
+                    e.error_class,
+                    e.created_at AS enrichment_created_at,
+                    e.reviewed_at,
+                    e.reviewer_note,
+                    r.id AS record_id,
+                    r.original_url,
+                    r.canonical_url,
+                    r.domain,
+                    r.url_hash,
+                    r.source_file,
+                    r.review_status,
+                    r.title,
+                    r.original_label,
+                    r.source_type,
+                    r.raw_imported_status
+                FROM ai_enrichments e
+                JOIN url_records r ON r.id = e.url_record_id
+                WHERE e.id = ?
+                ORDER BY e.id
+                """,
+                (enrichment_id,),
+            ).fetchall()
+
+        return [_stored_ai_enrichment_with_url_from_row(row) for row in rows]
 
 
 def parse_sqlite_database_url(database_url: str) -> str:
@@ -705,6 +879,12 @@ def validate_review_status(review_status: str) -> None:
     if review_status not in REVIEW_STATUSES:
         allowed = ", ".join(sorted(REVIEW_STATUSES))
         raise ValueError(f"review_status must be one of: {allowed}")
+
+
+def validate_enrichment_review_status(status: str) -> None:
+    if status not in ENRICHMENT_REVIEW_STATUSES:
+        allowed = ", ".join(sorted(ENRICHMENT_REVIEW_STATUSES))
+        raise ValueError(f"enrichment review status must be one of: {allowed}")
 
 
 def _stored_url_record_from_row(row: sqlite3.Row) -> StoredURLRecord:
@@ -753,4 +933,45 @@ def _stored_ai_enrichment_from_row(row: sqlite3.Row) -> StoredAIEnrichment:
         token_output_count=row["token_output_count"],
         estimated_cost_usd=row["estimated_cost_usd"],
         error_class=row["error_class"],
+        created_at=row["created_at"],
+        reviewed_at=row["reviewed_at"],
+        reviewer_note=row["reviewer_note"],
+    )
+
+
+def _stored_ai_enrichment_with_url_from_row(
+    row: sqlite3.Row,
+) -> StoredAIEnrichmentWithURL:
+    return StoredAIEnrichmentWithURL(
+        enrichment=StoredAIEnrichment(
+            id=row["enrichment_id"],
+            run_id=row["run_id"],
+            url_record_id=row["url_record_id"],
+            provider=row["provider"],
+            model=row["model"],
+            prompt_version=row["prompt_version"],
+            input_hash=row["input_hash"],
+            status=row["status"],
+            output_json=row["output_json"],
+            token_input_count=row["token_input_count"],
+            token_output_count=row["token_output_count"],
+            estimated_cost_usd=row["estimated_cost_usd"],
+            error_class=row["error_class"],
+            created_at=row["enrichment_created_at"],
+            reviewed_at=row["reviewed_at"],
+            reviewer_note=row["reviewer_note"],
+        ),
+        url_record=StoredURLRecord(
+            id=row["record_id"],
+            original_url=row["original_url"],
+            canonical_url=row["canonical_url"],
+            domain=row["domain"],
+            url_hash=row["url_hash"],
+            source_file=row["source_file"],
+            review_status=row["review_status"],
+            title=row["title"],
+            original_label=row["original_label"],
+            source_type=row["source_type"],
+            raw_imported_status=row["raw_imported_status"],
+        ),
     )

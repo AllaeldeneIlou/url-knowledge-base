@@ -6,11 +6,19 @@ import os
 from pathlib import Path
 
 from url_kb.enrich.providers import DEFAULT_PROMPT_VERSION, SUPPORTED_PROVIDERS
-from url_kb.enrich.service import DEFAULT_ENRICH_LIMIT, enrich_sources
+from url_kb.enrich.service import (
+    DEFAULT_ENRICH_LIMIT,
+    ENRICHMENT_REVIEW_DECISIONS,
+    EnrichmentNotFoundError,
+    enrich_sources,
+    list_enrichments,
+    review_enrichment,
+    show_enrichment,
+)
 from url_kb.export.source_packet import export_source_packet
 from url_kb.ingest.service import ingest_batch
 from url_kb.search.service import search_sources, update_review_status
-from url_kb.storage.sqlite_repo import SQLiteURLRepository
+from url_kb.storage.sqlite_repo import ENRICHMENT_REVIEW_STATUSES, SQLiteURLRepository
 
 DEFAULT_DATABASE_URL = "sqlite:///./data/url_kb.sqlite3"
 
@@ -71,6 +79,40 @@ def main() -> None:
             prompt_version=args.prompt_version,
             dry_run=args.dry_run,
         )
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return
+
+    if args.command == "list_enrichments":
+        repository = SQLiteURLRepository.from_database_url(args.database_url)
+        result = list_enrichments(
+            repository,
+            status=args.status,
+            provider=args.provider,
+            limit=args.limit,
+        )
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return
+
+    if args.command == "show_enrichment":
+        repository = SQLiteURLRepository.from_database_url(args.database_url)
+        try:
+            result = show_enrichment(repository, enrichment_id=args.enrichment_id)
+        except EnrichmentNotFoundError as error:
+            parser.error(str(error))
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return
+
+    if args.command == "review_enrichment":
+        repository = SQLiteURLRepository.from_database_url(args.database_url)
+        try:
+            result = review_enrichment(
+                repository,
+                enrichment_id=args.enrichment_id,
+                status=args.status,
+                reviewer_note=args.note,
+            )
+        except (EnrichmentNotFoundError, ValueError) as error:
+            parser.error(str(error))
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
         return
 
@@ -188,6 +230,63 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show selected records without writing enrichment rows",
     )
     enrich_parser.add_argument(
+        "--database-url",
+        default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
+        help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
+    )
+
+    list_enrichments_parser = subparsers.add_parser(
+        "list_enrichments",
+        help="List AI enrichment drafts and review states",
+    )
+    list_enrichments_parser.add_argument(
+        "--status",
+        choices=sorted(ENRICHMENT_REVIEW_STATUSES),
+        help="Enrichment review status filter",
+    )
+    list_enrichments_parser.add_argument("--provider", help="Provider filter")
+    list_enrichments_parser.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum enrichment rows to list",
+    )
+    list_enrichments_parser.add_argument(
+        "--database-url",
+        default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
+        help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
+    )
+
+    show_enrichment_parser = subparsers.add_parser(
+        "show_enrichment",
+        help="Show one AI enrichment draft with URL metadata",
+    )
+    show_enrichment_parser.add_argument(
+        "enrichment_id",
+        type=int,
+        help="Persisted ai_enrichments.id value",
+    )
+    show_enrichment_parser.add_argument(
+        "--database-url",
+        default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
+        help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
+    )
+
+    review_enrichment_parser = subparsers.add_parser(
+        "review_enrichment",
+        help="Approve or reject an AI enrichment draft",
+    )
+    review_enrichment_parser.add_argument(
+        "enrichment_id",
+        type=int,
+        help="Persisted ai_enrichments.id value",
+    )
+    review_enrichment_parser.add_argument(
+        "status",
+        choices=sorted(ENRICHMENT_REVIEW_DECISIONS),
+        help="Human review decision",
+    )
+    review_enrichment_parser.add_argument("--note", help="Reviewer note")
+    review_enrichment_parser.add_argument(
         "--database-url",
         default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
         help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
