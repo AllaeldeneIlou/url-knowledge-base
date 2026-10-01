@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Enrichments · URL KB{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="section-head">
+    <h1>Enrichment Review</h1>
+    <span class="muted">{{ count }} drafts</span>
+  </div>
+  <form class="filterbar" method="get" action="/enrichments">
+    <label>Status
+      <select name="status">
+        <option value="">any</option>
+        {% for status in ["pending_review", "approved", "rejected"] %}
+        <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Provider <input name="provider" value="{{ filters.provider }}"></label>
+    <label>Limit <input name="limit" type="number" min="1" value="{{ filters.limit }}"></label>
+    <button type="submit">Apply</button>
+  </form>
+</section>
+
+<section class="section flush">
+  <table>
+    <thead>
+      <tr>
+        <th>Id</th><th>URL id</th><th>Domain</th><th>Label</th><th>Provider</th><th>Model</th><th>Prompt</th><th>Status</th><th>Created</th><th>Reviewed</th><th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td class="num">{{ item.enrichment.id }}</td>
+        <td class="num"><a href="/sources/{{ item.url_record.id }}">{{ item.url_record.id }}</a></td>
+        <td class="mono">{{ item.url_record.domain }}</td>
+        <td class="truncate">{{ item.url_record.title or item.url_record.original_label or "—" }}</td>
+        <td>{{ item.enrichment.provider }}</td>
+        <td>{{ item.enrichment.model }}</td>
+        <td>{{ item.enrichment.prompt_version }}</td>
+        <td><span class="status">{{ item.enrichment.status }}</span></td>
+        <td class="mono">{{ item.enrichment.created_at }}</td>
+        <td class="mono">{{ item.enrichment.reviewed_at or "—" }}</td>
+        <td class="actions">
+          <form method="post" action="/enrichments/{{ item.enrichment.id }}/review">
+            <input type="hidden" name="next" value="/enrichments?status={{ filters.status }}&provider={{ filters.provider }}&limit={{ filters.limit }}">
+            <input name="note" placeholder="reviewer note" value="{{ item.enrichment.reviewer_note or "" }}">
+            <button name="status" value="approved" type="submit">Approve</button>
+            <button name="status" value="rejected" type="submit">Reject</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="11" class="muted">No enrichment drafts match the filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

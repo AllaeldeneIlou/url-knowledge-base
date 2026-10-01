@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Record {{ record.id }} · URL KB{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="section-head">
+    <h1>URL Record {{ record.id }}</h1>
+    <span class="muted">URL record review status is separate from enrichment review status</span>
+  </div>
+  <dl class="kv">
+    <dt>Canonical URL</dt><dd class="mono break">{{ record.canonical_url }}</dd>
+    <dt>Original URL</dt><dd class="mono break">{{ record.original_url }}</dd>
+    <dt>Domain</dt><dd class="mono">{{ record.domain }}</dd>
+    <dt>URL hash</dt><dd class="mono break">{{ record.url_hash }}</dd>
+    <dt>Title</dt><dd>{{ record.title or "—" }}</dd>
+    <dt>Original label</dt><dd>{{ record.original_label or "—" }}</dd>
+    <dt>Source type</dt><dd>{{ record.source_type or "—" }}</dd>
+    <dt>Raw imported status</dt><dd>{{ record.raw_imported_status or "—" }}</dd>
+    <dt>URL review status</dt><dd><span class="status">{{ record.review_status }}</span></dd>
+  </dl>
+</section>
+
+<section class="section">
+  <h2>Source Occurrences</h2>
+  <table>
+    <thead>
+      <tr><th>Format</th><th>File</th><th>Row</th><th>Block</th><th>Section</th><th>Label</th><th>Raw status</th></tr>
+    </thead>
+    <tbody>
+      {% for occurrence in occurrences %}
+      <tr>
+        <td>{{ occurrence.source_format }}</td>
+        <td class="truncate">{{ occurrence.source_file.split("/")[-1] }}</td>
+        <td class="num">{{ occurrence.row_number or "—" }}</td>
+        <td class="num">{{ occurrence.block_number or "—" }}</td>
+        <td class="truncate">{{ occurrence.source_section or "—" }}</td>
+        <td class="truncate">{{ occurrence.original_label or "—" }}</td>
+        <td>{{ occurrence.raw_imported_status or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="section">
+  <h2>Enrichment Drafts</h2>
+  <table>
+    <thead>
+      <tr><th>Id</th><th>Provider</th><th>Model</th><th>Prompt</th><th>Status</th><th>Summary</th><th>Tokens</th><th>Cost</th><th>Reviewed</th></tr>
+    </thead>
+    <tbody>
+      {% for enrichment in enrichments %}
+      <tr>
+        <td class="num">{{ enrichment.id }}</td>
+        <td>{{ enrichment.provider }}</td>
+        <td>{{ enrichment.model }}</td>
+        <td>{{ enrichment.prompt_version }}</td>
+        <td><span class="status">{{ enrichment.status }}</span></td>
+        <td class="truncate">
+          {{ enrichment.output.summary or enrichment.output.raw or "—" }}
+          {% if enrichment.output.topics %}<span class="muted"> · {{ enrichment.output.topics|join(", ") }}</span>{% endif %}
+        </td>
+        <td class="num">{{ enrichment.token_input_count or 0 }}/{{ enrichment.token_output_count or 0 }}</td>
+        <td class="num">{{ enrichment.estimated_cost_usd if enrichment.estimated_cost_usd is not none else "—" }}</td>
+        <td>{{ enrichment.reviewed_at or "—" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="muted">No enrichment drafts for this record.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

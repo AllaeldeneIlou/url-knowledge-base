@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Overview · URL KB{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="section-head">
+    <h1>Corpus Metrics</h1>
+    <span class="muted">aggregate view, no raw URL lists</span>
+  </div>
+  <div class="metric-grid">
+    <div class="metric"><span>URL records</span><strong>{{ metrics.url_record_count }}</strong></div>
+    <div class="metric"><span>Source occurrences</span><strong>{{ metrics.source_occurrence_count }}</strong></div>
+    <div class="metric"><span>Dedupe rate</span><strong>{{ metrics.dedupe_rate }}</strong></div>
+    <div class="metric"><span>Ingest runs</span><strong>{{ metrics.ingest_run_count }}</strong></div>
+    <div class="metric"><span>Failed rows</span><strong>{{ metrics.ingest_failures.failed_count }}</strong></div>
+    <div class="metric"><span>Enrichment coverage</span><strong>{{ metrics.enrichment_coverage.coverage }}</strong></div>
+  </div>
+</section>
+
+<section class="columns">
+  <div class="section">
+    <h2>Source Formats</h2>
+    <table>
+      <tbody>
+        {% for name, count in metrics.source_occurrences_by_format.items() %}
+        <tr><th>{{ name }}</th><td class="num">{{ count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="section">
+    <h2>Review Status</h2>
+    <table>
+      <tbody>
+        {% for name, count in metrics.url_records_by_review_status.items() %}
+        <tr><th>{{ name }}</th><td class="num">{{ count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="section">
+    <h2>AI Enrichments</h2>
+    <table>
+      <tbody>
+        {% for name, count in metrics.ai_enrichments_by_status.items() %}
+        <tr><th>{{ name }}</th><td class="num">{{ count }}</td></tr>
+        {% else %}
+        <tr><td class="muted">No enrichment rows</td><td></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="columns wide-left">
+  <div class="section">
+    <h2>Top Domains</h2>
+    <table>
+      <thead><tr><th>Domain</th><th>Records</th></tr></thead>
+      <tbody>
+        {% for item in metrics.top_domains %}
+        <tr><td class="mono">{{ item.domain }}</td><td class="num">{{ item.count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="section">
+    <h2>Latest Ingest Runs</h2>
+    <table>
+      <thead>
+        <tr><th>Source</th><th>Status</th><th>Valid</th><th>Failed</th><th>Created</th></tr>
+      </thead>
+      <tbody>
+        {% for run in metrics.latest_ingest_runs %}
+        <tr>
+          <td class="truncate">{{ run.source_file }}</td>
+          <td><span class="status">{{ run.status }}</span></td>
+          <td class="num">{{ run.valid_count }}</td>
+          <td class="num">{{ run.failed_count }}</td>
+          <td class="mono">{{ run.created_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section">
+  <h2>Multiple Occurrences</h2>
+  <p class="muted">{{ metrics.records_with_multiple_occurrences.count }} canonical records have more than one source occurrence.</p>
+  <table>
+    <thead><tr><th>Record id</th><th>Domain</th><th>Occurrences</th></tr></thead>
+    <tbody>
+      {% for item in metrics.records_with_multiple_occurrences.top %}
+      <tr>
+        <td><a href="/sources/{{ item.url_record_id }}">{{ item.url_record_id }}</a></td>
+        <td class="mono">{{ item.domain }}</td>
+        <td class="num">{{ item.occurrence_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

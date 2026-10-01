@@ -155,6 +155,18 @@ def main() -> None:
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
         return
 
+    if args.command == "serve":
+        import uvicorn
+
+        from url_kb.web.app import create_app
+
+        uvicorn.run(
+            create_app(args.database_url),
+            host=args.host,
+            port=args.port,
+        )
+        return
+
     parser.print_help()
 
 
@@ -389,6 +401,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
         help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
     )
+
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Run the local web review console",
+    )
+    serve_parser.add_argument(
+        "--database-url",
+        default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
+        help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
+    )
+    serve_parser.add_argument("--host", default="127.0.0.1", help="Bind host")
+    serve_parser.add_argument("--port", type=int, default=8000, help="Bind port")
 
     return parser
 

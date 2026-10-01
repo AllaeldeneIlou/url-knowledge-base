@@ -3,7 +3,11 @@ name = "url-knowledge-base"
 version = "0.1.0"
 description = "Local-first URL ingestion and retrieval prototype."
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "fastapi>=0.142.0",
+  "jinja2>=3.1.0",
+  "uvicorn>=0.54.0",
+]
 
 [project.scripts]
 url-kb = "url_kb.cli:main"
@@ -14,6 +18,7 @@ build-backend = "setuptools.build_meta"
 
 [project.optional-dependencies]
 dev = [
+  "httpx>=0.28.0",
   "pytest>=8.0",
   "ruff>=0.6.0",
 ]

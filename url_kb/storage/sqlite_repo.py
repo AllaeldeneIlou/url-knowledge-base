@@ -488,6 +488,30 @@ class SQLiteURLRepository:
             for row in rows
         ]
 
+    def get_url_record(self, record_id: int) -> StoredURLRecord | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    id,
+                    original_url,
+                    canonical_url,
+                    domain,
+                    url_hash,
+                    source_file,
+                    review_status,
+                    title,
+                    original_label,
+                    source_type,
+                    raw_imported_status
+                FROM url_records
+                WHERE id = ?
+                """,
+                (record_id,),
+            ).fetchone()
+
+        return _stored_url_record_from_row(row) if row is not None else None
+
     def search_url_records(
         self,
         *,
@@ -836,6 +860,38 @@ class SQLiteURLRepository:
             ).fetchall()
 
         return [_stored_ai_enrichment_with_url_from_row(row) for row in rows]
+
+    def list_ai_enrichments_for_url_record_id(
+        self, url_record_id: int
+    ) -> list[StoredAIEnrichment]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    run_id,
+                    url_record_id,
+                    provider,
+                    model,
+                    prompt_version,
+                    input_hash,
+                    status,
+                    output_json,
+                    token_input_count,
+                    token_output_count,
+                    estimated_cost_usd,
+                    error_class,
+                    created_at,
+                    reviewed_at,
+                    reviewer_note
+                FROM ai_enrichments
+                WHERE url_record_id = ?
+                ORDER BY id
+                """,
+                (url_record_id,),
+            ).fetchall()
+
+        return [_stored_ai_enrichment_from_row(row) for row in rows]
 
     def get_ai_enrichment_with_url(
         self, enrichment_id: int
