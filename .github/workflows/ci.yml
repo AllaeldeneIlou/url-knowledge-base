@@ -49,6 +49,9 @@ jobs:
       - name: Build Docker image
         run: docker build -t url-kb:ci .
 
+      - name: Prepare demo data directory
+        run: mkdir -p data && chmod 777 data
+
       - name: Seed demo database
         run: docker run --rm -v "$PWD/data:/app/data" url-kb:ci url-kb ingest_batch samples/public_urls.csv --database-url sqlite:///./data/url_kb.sqlite3
 
