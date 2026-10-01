@@ -17,7 +17,7 @@ from url_kb.enrich.service import (
 )
 from url_kb.export.source_packet import export_source_packet
 from url_kb.ingest.service import (
-    PRIVATE_CORPUS_CSV_PROFILES,
+    PRIVATE_CORPUS_PROFILES,
     ingest_batch,
     ingest_private_corpus_csvs,
 )
@@ -169,10 +169,10 @@ def build_parser() -> argparse.ArgumentParser:
     private_corpus_parser.add_argument(
         "--profile",
         action="append",
-        choices=sorted(PRIVATE_CORPUS_CSV_PROFILES),
+        choices=sorted(PRIVATE_CORPUS_PROFILES),
         help=(
-            "CSV profile to ingest. May be repeated. Defaults to master_csv and "
-            "notion_csv."
+            "Private corpus profile to ingest. May be repeated. Defaults to all "
+            "supported profiles."
         ),
     )
     private_corpus_parser.add_argument(

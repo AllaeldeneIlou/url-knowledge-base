@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from time import perf_counter
@@ -9,15 +10,78 @@ from url_kb.ingest.dedupe import dedupe_normalized
 from url_kb.ingest.parser import (
     ParsedURLRows,
     URLRowError,
+    parse_bare_or_mixed_url_text,
+    parse_logseq_markdown_blocks,
+    parse_markdown_links,
     parse_master_url_database_csv,
     parse_notion_url_export_csv,
     parse_url_csv,
 )
 from url_kb.storage.sqlite_repo import SQLiteURLRepository, URLRecordOccurrenceInput
 
-PRIVATE_CORPUS_CSV_PROFILES = {
-    "master_csv": ("master_url_database.csv", parse_master_url_database_csv),
-    "notion_csv": ("notion_second_brain_links.csv", parse_notion_url_export_csv),
+ParserFunction = Callable[[Path], ParsedURLRows]
+
+
+@dataclass(frozen=True)
+class PrivateCorpusProfile:
+    source_paths: tuple[str, ...]
+    parser: ParserFunction
+    required: bool = False
+
+
+PRIVATE_CORPUS_PROFILES = {
+    "master_csv": PrivateCorpusProfile(
+        source_paths=("master_url_database.csv",),
+        parser=parse_master_url_database_csv,
+        required=True,
+    ),
+    "notion_csv": PrivateCorpusProfile(
+        source_paths=("notion_second_brain_links.csv",),
+        parser=parse_notion_url_export_csv,
+        required=True,
+    ),
+    "markdown_links": PrivateCorpusProfile(
+        source_paths=(
+            "not_sorted/urls_20260715/urls_20260715_deduplicati.md",
+            "not_sorted/urls_20260715/urls_20260715_macroaree.md",
+            "not_sorted/urls_20260716/urls_20260716.md",
+            "not_sorted/urls_20260716/urls_20260716_deduplicati.md",
+            "not_sorted/urls_20260716/urls_20260716_macroaree.md",
+        ),
+        parser=parse_markdown_links,
+    ),
+    "logseq_markdown_blocks": PrivateCorpusProfile(
+        source_paths=(
+            "not_sorted/markdown_urls/ai-automation-e-agents.md",
+            "not_sorted/markdown_urls/cloud-e-architecture.md",
+            "not_sorted/markdown_urls/learning-resources.md",
+            "not_sorted/markdown_urls/mlops-e-pipelines.md",
+            "not_sorted/markdown_urls/problem-solving-e-frameworks.md",
+            "not_sorted/markdown_urls/projects-e-ventures.md",
+            "not_sorted/markdown_urls/python-engineering.md",
+            "not_sorted/markdown_urls/tools-e-products.md",
+        ),
+        parser=parse_logseq_markdown_blocks,
+    ),
+    "bare_or_mixed_url_text": PrivateCorpusProfile(
+        source_paths=(
+            "not_sorted/20260422_urls/urls_AI-Agents.txt",
+            "not_sorted/20260422_urls/urls_ITS-AWS.txt",
+            "not_sorted/20260422_urls/urls_Laptop.txt",
+            "not_sorted/20260422_urls/urls_Persona-professional-narration.txt",
+            "not_sorted/20260422_urls/urls_finanza-personale.txt",
+            "not_sorted/20260422_urls/urls_inbox.txt",
+            "not_sorted/20260422_urls/urls_learn.txt",
+            "not_sorted/20260422_urls/urls_modulo.txt",
+            "not_sorted/20260422_urls/urls_psilo.txt",
+            "not_sorted/20260422_urls/urls_unitelma.txt",
+            "not_sorted/20260422_urls/urls_virtual-studios.txt",
+            "not_sorted/urls_20260319.txt",
+            "not_sorted/urls_20260330.txt",
+            "not_sorted/urls_20260715/urls_20260715.md",
+        ),
+        parser=parse_bare_or_mixed_url_text,
+    ),
 }
 
 
@@ -107,36 +171,41 @@ def ingest_private_corpus_csvs(
     profiles: list[str] | None = None,
 ) -> PrivateCorpusIngestResult:
     repository.initialize()
-    selected_profiles = profiles or list(PRIVATE_CORPUS_CSV_PROFILES)
+    selected_profiles = profiles or list(PRIVATE_CORPUS_PROFILES)
     summaries: list[PrivateCorpusFileSummary] = []
 
     for profile in selected_profiles:
         try:
-            filename, parser = PRIVATE_CORPUS_CSV_PROFILES[profile]
+            profile_config = PRIVATE_CORPUS_PROFILES[profile]
         except KeyError as exc:
-            allowed = ", ".join(sorted(PRIVATE_CORPUS_CSV_PROFILES))
+            allowed = ", ".join(sorted(PRIVATE_CORPUS_PROFILES))
             raise ValueError(f"profile must be one of: {allowed}") from exc
 
-        source_path = corpus_path / filename
-        if not source_path.exists():
-            raise FileNotFoundError(f"Private corpus source not found: {source_path}")
+        source_paths = [
+            corpus_path / relative_path
+            for relative_path in profile_config.source_paths
+            if _is_ingestable_private_path(corpus_path / relative_path)
+        ]
+        if not source_paths and (profiles is not None or profile_config.required):
+            raise FileNotFoundError(f"Private corpus profile has no source files: {profile}")
 
-        parsed = parser(source_path)
-        result = _ingest_parsed_rows(source_path, repository, parsed)
-        summaries.append(
-            PrivateCorpusFileSummary(
-                profile=profile,
-                source_file=str(source_path),
-                input_count=result.input_count,
-                valid_count=result.valid_count,
-                inserted_count=result.inserted_count,
-                duplicate_count=result.duplicate_count,
-                malformed_count=result.malformed_count,
-                failed_count=result.failed_count,
-                status=result.status,
-                error_reasons=_count_error_reasons(result.errors),
+        for source_path in source_paths:
+            parsed = profile_config.parser(source_path)
+            result = _ingest_parsed_rows(source_path, repository, parsed)
+            summaries.append(
+                PrivateCorpusFileSummary(
+                    profile=profile,
+                    source_file=str(source_path),
+                    input_count=result.input_count,
+                    valid_count=result.valid_count,
+                    inserted_count=result.inserted_count,
+                    duplicate_count=result.duplicate_count,
+                    malformed_count=result.malformed_count,
+                    failed_count=result.failed_count,
+                    status=result.status,
+                    error_reasons=_count_error_reasons(result.errors),
+                )
             )
-        )
 
     return PrivateCorpusIngestResult(
         corpus_path=str(corpus_path),
@@ -179,6 +248,7 @@ def _ingest_parsed_rows(
                 raw_imported_status=record.raw_imported_status,
                 source_section=record.source_section,
                 row_number=record.row_number,
+                block_number=record.block_number,
             )
         )
 
@@ -230,3 +300,13 @@ def _count_error_reasons(errors: list[URLRowError]) -> dict[str, int]:
     for error in errors:
         counts[error.reason] = counts.get(error.reason, 0) + 1
     return counts
+
+
+def _is_ingestable_private_path(path: Path) -> bool:
+    if not path.exists() or not path.is_file():
+        return False
+    if any(part.startswith("._") for part in path.parts):
+        return False
+    if "__pycache__" in path.parts:
+        return False
+    return path.suffix != ".pyc"

@@ -155,3 +155,159 @@ def test_ingest_private_corpus_csvs_can_select_one_profile(tmp_path: Path):
     assert result.input_count == 1
     assert result.inserted_count == 1
     assert result.files[0].profile == "master_csv"
+
+
+def test_ingest_private_corpus_markdown_profile_preserves_occurrences(
+    tmp_path: Path,
+):
+    corpus_path = tmp_path / "corpus"
+    markdown_path = (
+        corpus_path
+        / "not_sorted"
+        / "urls_20260715"
+        / "urls_20260715_deduplicati.md"
+    )
+    markdown_path.parent.mkdir(parents=True)
+    markdown_path.write_text(
+        "# Cloud\n"
+        "- [Example Guide](https://example.com/guide)\n"
+        "- [Other Guide](https://example.org/other)\n",
+        encoding="utf-8",
+    )
+    repository = SQLiteURLRepository(tmp_path / "url_kb.sqlite3")
+
+    result = ingest_private_corpus_csvs(corpus_path, repository, profiles=["markdown_links"])
+
+    assert result.input_count == 2
+    assert result.inserted_count == 2
+    assert result.failed_count == 0
+    assert result.files[0].profile == "markdown_links"
+    assert result.files[0].source_file == str(markdown_path)
+
+    occurrences = repository.list_source_occurrences()
+    assert len(occurrences) == 2
+    assert {occurrence.source_format for occurrence in occurrences} == {"markdown_links"}
+    assert {occurrence.source_section for occurrence in occurrences} == {"Cloud"}
+    assert {occurrence.row_number for occurrence in occurrences} == {2, 3}
+    assert {occurrence.original_label for occurrence in occurrences} == {
+        "Example Guide",
+        "Other Guide",
+    }
+
+
+def test_private_non_csv_source_occurrences_are_idempotent_on_reingest(tmp_path: Path):
+    corpus_path = tmp_path / "corpus"
+    markdown_path = (
+        corpus_path
+        / "not_sorted"
+        / "urls_20260716"
+        / "urls_20260716_deduplicati.md"
+    )
+    markdown_path.parent.mkdir(parents=True)
+    markdown_path.write_text(
+        "# Tools\n"
+        "- [Example Guide](https://example.com/guide)\n"
+        "- [Other Guide](https://example.org/other)\n",
+        encoding="utf-8",
+    )
+    repository = SQLiteURLRepository(tmp_path / "url_kb.sqlite3")
+
+    first_result = ingest_private_corpus_csvs(
+        corpus_path,
+        repository,
+        profiles=["markdown_links"],
+    )
+    first_occurrence_count = repository.count_source_occurrences()
+    second_result = ingest_private_corpus_csvs(
+        corpus_path,
+        repository,
+        profiles=["markdown_links"],
+    )
+
+    assert first_result.inserted_count == 2
+    assert second_result.inserted_count == 0
+    assert second_result.duplicate_count == 2
+    assert repository.count_url_records() == 2
+    assert repository.count_source_occurrences() == first_occurrence_count
+
+
+def test_private_same_line_duplicate_url_occurrences_are_preserved_and_idempotent(
+    tmp_path: Path,
+):
+    corpus_path = tmp_path / "corpus"
+    bare_path = corpus_path / "not_sorted" / "20260422_urls" / "urls_AI-Agents.txt"
+    bare_path.parent.mkdir(parents=True)
+    bare_path.write_text(
+        "Repeated https://example.com/repeated and https://example.com/repeated\n",
+        encoding="utf-8",
+    )
+    repository = SQLiteURLRepository(tmp_path / "url_kb.sqlite3")
+
+    first_result = ingest_private_corpus_csvs(
+        corpus_path,
+        repository,
+        profiles=["bare_or_mixed_url_text"],
+    )
+    first_occurrence_count = repository.count_source_occurrences()
+    second_result = ingest_private_corpus_csvs(
+        corpus_path,
+        repository,
+        profiles=["bare_or_mixed_url_text"],
+    )
+
+    assert first_result.valid_count == 2
+    assert first_result.inserted_count == 1
+    assert first_result.duplicate_count == 1
+    assert first_occurrence_count == 2
+    assert second_result.inserted_count == 0
+    assert second_result.duplicate_count == 2
+    assert repository.count_source_occurrences() == first_occurrence_count
+    assert {occurrence.block_number for occurrence in repository.list_source_occurrences()} == {
+        1,
+        2,
+    }
+
+
+def test_ingest_private_corpus_logseq_and_bare_profiles(tmp_path: Path):
+    corpus_path = tmp_path / "corpus"
+    logseq_path = (
+        corpus_path
+        / "not_sorted"
+        / "markdown_urls"
+        / "python-engineering.md"
+    )
+    bare_path = corpus_path / "not_sorted" / "20260422_urls" / "urls_AI-Agents.txt"
+    logseq_path.parent.mkdir(parents=True)
+    bare_path.parent.mkdir(parents=True)
+    logseq_path.write_text(
+        "# Python\n"
+        "- [Python Docs](https://docs.example.com/python)\n"
+        "  type:: documentation\n",
+        encoding="utf-8",
+    )
+    bare_path.write_text(
+        "Read https://agents.example.com/overview.\n",
+        encoding="utf-8",
+    )
+    repository = SQLiteURLRepository(tmp_path / "url_kb.sqlite3")
+
+    result = ingest_private_corpus_csvs(
+        corpus_path,
+        repository,
+        profiles=["logseq_markdown_blocks", "bare_or_mixed_url_text"],
+    )
+
+    assert result.input_count == 2
+    assert result.inserted_count == 2
+    assert {file_summary.profile for file_summary in result.files} == {
+        "logseq_markdown_blocks",
+        "bare_or_mixed_url_text",
+    }
+    occurrences = repository.list_source_occurrences()
+    assert {occurrence.source_format for occurrence in occurrences} == {
+        "logseq_markdown_blocks",
+        "bare_or_mixed_url_text",
+    }
+    assert any(occurrence.original_label == "Python Docs" for occurrence in occurrences)
+    records = repository.list_url_records()
+    assert any(record.source_type == "documentation" for record in records)
