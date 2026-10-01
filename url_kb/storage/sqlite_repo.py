@@ -479,6 +479,41 @@ class SQLiteURLRepository:
 
         return [_stored_source_occurrence_from_row(row) for row in rows]
 
+    def list_source_occurrences_for_record_ids(
+        self, record_ids: list[int]
+    ) -> dict[int, list[StoredSourceOccurrence]]:
+        if not record_ids:
+            return {}
+
+        placeholders = ",".join("?" for _ in record_ids)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                    id,
+                    url_record_id,
+                    source_file,
+                    source_format,
+                    original_url,
+                    original_label,
+                    source_section,
+                    row_number,
+                    block_number,
+                    raw_imported_status
+                FROM source_occurrences
+                WHERE url_record_id IN ({placeholders})
+                ORDER BY url_record_id, id
+                """,
+                record_ids,
+            ).fetchall()
+
+        grouped: dict[int, list[StoredSourceOccurrence]] = {}
+        for row in rows:
+            occurrence = _stored_source_occurrence_from_row(row)
+            grouped.setdefault(occurrence.url_record_id, []).append(occurrence)
+
+        return grouped
+
     def count_source_occurrences(self) -> int:
         with self._connect() as connection:
             return int(connection.execute("SELECT COUNT(*) FROM source_occurrences").fetchone()[0])

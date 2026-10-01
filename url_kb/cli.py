@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 
+from url_kb.export.source_packet import export_source_packet
 from url_kb.ingest.service import ingest_batch
 from url_kb.search.service import search_sources, update_review_status
 from url_kb.storage.sqlite_repo import SQLiteURLRepository
@@ -39,6 +40,18 @@ def main() -> None:
             repository,
             record_id=args.record_id,
             review_status=args.review_status,
+        )
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return
+
+    if args.command == "export_source_packet":
+        repository = SQLiteURLRepository.from_database_url(args.database_url)
+        result = export_source_packet(
+            repository,
+            query=args.query,
+            domain=args.domain,
+            review_status=args.review_status,
+            output_path=args.output,
         )
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
         return
@@ -89,6 +102,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="New review status",
     )
     update_parser.add_argument(
+        "--database-url",
+        default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
+        help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
+    )
+
+    export_parser = subparsers.add_parser(
+        "export_source_packet",
+        help="Export searched URL records to a draft Markdown source packet",
+    )
+    export_parser.add_argument("--query", help="Keyword query over URL/domain/source fields")
+    export_parser.add_argument("--domain", help="Exact domain filter")
+    export_parser.add_argument(
+        "--review-status",
+        choices=["pending_review", "reviewed", "rejected"],
+        help="Review status filter",
+    )
+    export_parser.add_argument(
+        "--output",
+        type=Path,
+        help=(
+            "Markdown output path. Defaults to "
+            "outputs/source_packets/<timestamp>_source_packet.md"
+        ),
+    )
+    export_parser.add_argument(
         "--database-url",
         default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
         help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
