@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -145,7 +146,7 @@ def test_enrichment_review_cli_outputs_json(tmp_path: Path):
 
     list_completed = subprocess.run(
         [
-            ".venv/bin/python",
+            sys.executable,
             "-m",
             "url_kb.cli",
             "list_enrichments",
@@ -160,7 +161,7 @@ def test_enrichment_review_cli_outputs_json(tmp_path: Path):
     )
     show_completed = subprocess.run(
         [
-            ".venv/bin/python",
+            sys.executable,
             "-m",
             "url_kb.cli",
             "show_enrichment",
@@ -174,7 +175,7 @@ def test_enrichment_review_cli_outputs_json(tmp_path: Path):
     )
     review_completed = subprocess.run(
         [
-            ".venv/bin/python",
+            sys.executable,
             "-m",
             "url_kb.cli",
             "review_enrichment",

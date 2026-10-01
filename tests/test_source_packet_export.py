@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -83,7 +84,7 @@ def test_export_source_packet_cli_writes_requested_markdown_file(tmp_path: Path)
 
     completed = subprocess.run(
         [
-            ".venv/bin/python",
+            sys.executable,
             "-m",
             "url_kb.cli",
             "export_source_packet",

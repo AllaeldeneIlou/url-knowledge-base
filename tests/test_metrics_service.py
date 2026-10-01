@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -122,7 +123,7 @@ def test_corpus_metrics_cli_prints_valid_json(tmp_path: Path):
 
     completed = subprocess.run(
         [
-            ".venv/bin/python",
+            sys.executable,
             "-m",
             "url_kb.cli",
             "corpus_metrics",

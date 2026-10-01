@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from dataclasses import asdict
 from pathlib import Path
 
@@ -120,7 +121,7 @@ def test_enrich_sources_cli_writes_mock_enrichments(tmp_path: Path):
 
     completed = subprocess.run(
         [
-            ".venv/bin/python",
+            sys.executable,
             "-m",
             "url_kb.cli",
             "enrich_sources",
