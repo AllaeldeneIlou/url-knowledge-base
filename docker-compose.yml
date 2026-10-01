@@ -1,0 +1,25 @@
+services:
+  url-kb:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      URL_KB_DATABASE_URL: sqlite:///./data/url_kb.sqlite3
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  seed-demo:
+    build: .
+    profiles:
+      - seed
+    environment:
+      URL_KB_DATABASE_URL: sqlite:///./data/url_kb.sqlite3
+    volumes:
+      - ./data:/app/data
+    command:
+      - url-kb
+      - ingest_batch
+      - samples/public_urls.csv
+      - --database-url
+      - sqlite:///./data/url_kb.sqlite3

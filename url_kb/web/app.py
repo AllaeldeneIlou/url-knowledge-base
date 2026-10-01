@@ -45,6 +45,10 @@ def create_app(database_url: str | None = None) -> FastAPI:
         name="static",
     )
 
+    @app.get("/health")
+    def health():
+        return {"status": "ok"}
+
     @app.get("/")
     def overview(request: Request):
         repository = _repository(request)

@@ -37,3 +37,6 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.setuptools.packages.find]
 include = ["url_kb*"]
 exclude = ["samples*", "tests*"]
+
+[tool.setuptools.package-data]
+"url_kb.web" = ["templates/*.html", "static/*.css"]

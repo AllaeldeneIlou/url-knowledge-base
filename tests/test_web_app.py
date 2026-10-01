@@ -23,6 +23,16 @@ def test_overview_page_loads_metrics_and_footer(tmp_path: Path):
     assert "© Allaeldene Ilou" in response.text
 
 
+def test_health_endpoint_reports_ok(tmp_path: Path):
+    database_path = tmp_path / "url_kb.sqlite3"
+    client = _client(database_path)
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_sources_page_filters_records(tmp_path: Path):
     database_path = tmp_path / "url_kb.sqlite3"
     _seed_web_repository(database_path)
