@@ -122,6 +122,10 @@ h2 {
   background: var(--line);
 }
 
+.metric-grid.compact {
+  grid-template-columns: repeat(6, minmax(80px, 1fr));
+}
+
 .metric {
   min-width: 0;
   background: #fdfdfd;
@@ -158,6 +162,20 @@ h2 {
   flex-wrap: wrap;
 }
 
+.capture-form {
+  display: grid;
+  gap: 10px;
+}
+
+.capture-form .filterbar input {
+  min-width: 260px;
+}
+
+.capture-form .actions {
+  display: flex;
+  gap: 8px;
+}
+
 label {
   color: var(--muted);
   display: grid;
@@ -168,12 +186,19 @@ label {
 
 input,
 select,
-button {
+button,
+textarea {
   border: 1px solid var(--line-dark);
   border-radius: 2px;
   color: var(--text);
   font: inherit;
   padding: 5px 7px;
+}
+
+textarea {
+  min-height: 220px;
+  resize: vertical;
+  width: 100%;
 }
 
 button {
@@ -238,6 +263,18 @@ tbody tr:hover {
   display: inline-block;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   padding: 1px 4px;
+}
+
+.notice {
+  align-items: center;
+  background: #fff8e8;
+  border: 1px solid #d8b967;
+  color: var(--warn);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 6px 8px;
 }
 
 .kv {

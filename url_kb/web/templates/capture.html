@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Capture · URL KB{% endblock %}
+{% block content %}
+<section class="section">
+  <div class="section-head">
+    <h1>Clipboard Capture</h1>
+    <span class="muted">OneTab-style Markdown links and bare URLs</span>
+  </div>
+  <form class="capture-form" method="post" action="/capture">
+    <div class="filterbar">
+      <label>Batch title <input name="batch_title" value="{{ form.batch_title }}"></label>
+      <label>Source type <input name="source_type" value="{{ form.source_type }}"></label>
+    </div>
+    <label>Paste export
+      <textarea name="pasted_text" rows="12">{{ form.pasted_text }}</textarea>
+    </label>
+    <div class="actions">
+      <button type="submit" name="action" value="preview">Preview</button>
+      <button type="submit" name="action" value="ingest">Ingest</button>
+    </div>
+  </form>
+</section>
+
+{% if ingest_result %}
+<section class="section">
+  <div class="section-head">
+    <h2>Ingest Summary</h2>
+    <span class="status">{{ ingest_result.status }}</span>
+  </div>
+  <div class="metric-grid compact">
+    <div class="metric"><span>Input</span><strong>{{ ingest_result.input_count }}</strong></div>
+    <div class="metric"><span>Valid</span><strong>{{ ingest_result.valid_count }}</strong></div>
+    <div class="metric"><span>Inserted</span><strong>{{ ingest_result.inserted_count }}</strong></div>
+    <div class="metric"><span>Duplicates</span><strong>{{ ingest_result.duplicate_count }}</strong></div>
+    <div class="metric"><span>Malformed</span><strong>{{ ingest_result.malformed_count }}</strong></div>
+    <div class="metric"><span>Failed</span><strong>{{ ingest_result.failed_count }}</strong></div>
+  </div>
+  {% if preview and preview.batch_title %}
+  <p class="muted">Batch stored as <span class="mono">{{ preview.source_file }}</span>. <a href="/sources?query={{ preview.batch_title|urlencode }}">View matching sources</a></p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if preview %}
+<section class="section">
+  <div class="section-head">
+    <h2>{% if mode == "ingest" %}Parsed Records{% else %}Preview{% endif %}</h2>
+    <span class="muted">{{ preview.valid_count }} valid · {{ preview.malformed_count }} malformed</span>
+  </div>
+  {% if preview.error_reason_counts %}
+  <div class="notice">
+    {% for reason, count in preview.error_reason_counts.items() %}
+    <span><strong>{{ count }}</strong> {{ reason }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <table>
+    <thead>
+      <tr><th>Line</th><th>Block</th><th>Domain</th><th>Label</th><th>Canonical</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for record in preview.records %}
+      <tr>
+        <td class="num">{{ record.row_number }}</td>
+        <td class="num">{{ record.block_number }}</td>
+        <td class="mono">{{ record.domain }}</td>
+        <td class="truncate">{{ record.original_label or "—" }}</td>
+        <td class="truncate mono">{{ record.canonical_url }}</td>
+        <td><span class="status">{{ record.status }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">No valid URLs parsed.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

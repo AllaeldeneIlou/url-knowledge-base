@@ -34,6 +34,7 @@ class StoredSourceOccurrence:
     source_format: str
     original_url: str
     original_label: str | None
+    source_type: str | None
     source_section: str | None
     row_number: int | None
     block_number: int | None
@@ -175,6 +176,7 @@ class SQLiteURLRepository:
                     source_format TEXT NOT NULL,
                     original_url TEXT NOT NULL,
                     original_label TEXT,
+                    source_type TEXT,
                     source_section TEXT,
                     row_number INTEGER,
                     block_number INTEGER,
@@ -215,6 +217,7 @@ class SQLiteURLRepository:
                 """
             )
             self._ensure_url_record_columns(connection)
+            self._ensure_source_occurrence_columns(connection)
             self._ensure_ai_enrichment_columns(connection)
 
     def insert_url_record(
@@ -273,6 +276,7 @@ class SQLiteURLRepository:
         source_format: str,
         original_url: str,
         original_label: str | None = None,
+        source_type: str | None = None,
         source_section: str | None = None,
         row_number: int | None = None,
         block_number: int | None = None,
@@ -287,12 +291,13 @@ class SQLiteURLRepository:
                     source_format,
                     original_url,
                     original_label,
+                    source_type,
                     source_section,
                     row_number,
                     block_number,
                     raw_imported_status
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     url_record_id,
@@ -300,6 +305,7 @@ class SQLiteURLRepository:
                     source_format,
                     original_url,
                     original_label,
+                    source_type,
                     source_section,
                     row_number,
                     block_number,
@@ -385,12 +391,13 @@ class SQLiteURLRepository:
                         source_format,
                         original_url,
                         original_label,
+                        source_type,
                         source_section,
                         row_number,
                         block_number,
                         raw_imported_status
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         record_id,
@@ -398,6 +405,7 @@ class SQLiteURLRepository:
                         entry.source_format,
                         entry.url.original_url,
                         entry.original_label,
+                        entry.source_type,
                         entry.source_section,
                         entry.row_number,
                         entry.block_number,
@@ -662,6 +670,7 @@ class SQLiteURLRepository:
                     source_format,
                     original_url,
                     original_label,
+                    source_type,
                     source_section,
                     row_number,
                     block_number,
@@ -690,6 +699,7 @@ class SQLiteURLRepository:
                     source_format,
                     original_url,
                     original_label,
+                    source_type,
                     source_section,
                     row_number,
                     block_number,
@@ -1153,6 +1163,21 @@ class SQLiteURLRepository:
                     f"ALTER TABLE url_records ADD COLUMN {column_name} {column_type}"
                 )
 
+    def _ensure_source_occurrence_columns(self, connection: sqlite3.Connection) -> None:
+        existing_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(source_occurrences)").fetchall()
+        }
+        column_definitions = {
+            "source_type": "TEXT",
+        }
+
+        for column_name, column_type in column_definitions.items():
+            if column_name not in existing_columns:
+                connection.execute(
+                    f"ALTER TABLE source_occurrences ADD COLUMN {column_name} {column_type}"
+                )
+
     def _ensure_ai_enrichment_columns(self, connection: sqlite3.Connection) -> None:
         existing_columns = {
             row["name"]
@@ -1269,6 +1294,7 @@ def _stored_source_occurrence_from_row(row: sqlite3.Row) -> StoredSourceOccurren
         source_format=row["source_format"],
         original_url=row["original_url"],
         original_label=row["original_label"],
+        source_type=row["source_type"],
         source_section=row["source_section"],
         row_number=row["row_number"],
         block_number=row["block_number"],

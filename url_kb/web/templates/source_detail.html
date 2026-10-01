@@ -23,13 +23,14 @@
   <h2>Source Occurrences</h2>
   <table>
     <thead>
-      <tr><th>Format</th><th>File</th><th>Row</th><th>Block</th><th>Section</th><th>Label</th><th>Raw status</th></tr>
+      <tr><th>Format</th><th>File</th><th>Type</th><th>Row</th><th>Block</th><th>Section</th><th>Label</th><th>Raw status</th></tr>
     </thead>
     <tbody>
       {% for occurrence in occurrences %}
       <tr>
         <td>{{ occurrence.source_format }}</td>
         <td class="truncate">{{ occurrence.source_file.split("/")[-1] }}</td>
+        <td>{{ occurrence.source_type or "—" }}</td>
         <td class="num">{{ occurrence.row_number or "—" }}</td>
         <td class="num">{{ occurrence.block_number or "—" }}</td>
         <td class="truncate">{{ occurrence.source_section or "—" }}</td>

@@ -16,6 +16,11 @@ from url_kb.enrich.service import (
     list_enrichments,
     review_enrichment,
 )
+from url_kb.ingest.clipboard import (
+    DEFAULT_CLIPBOARD_SOURCE_TYPE,
+    ingest_clipboard_export,
+    parse_clipboard_export,
+)
 from url_kb.metrics.service import corpus_metrics
 from url_kb.search.service import search_sources
 from url_kb.storage.sqlite_repo import SQLiteURLRepository, StoredAIEnrichment
@@ -80,6 +85,63 @@ def create_app(database_url: str | None = None) -> FastAPI:
                     "review_status": review_status or "",
                 },
             },
+        )
+
+    @app.get("/capture")
+    def capture(request: Request):
+        return templates.TemplateResponse(
+            request,
+            "capture.html",
+            _capture_context(),
+        )
+
+    @app.post("/capture")
+    async def capture_action(request: Request):
+        form = parse_qs((await request.body()).decode("utf-8"))
+        action = _form_value(form, "action")
+        batch_title = _blank_to_none(_form_value(form, "batch_title"))
+        source_type = _blank_to_none(_form_value(form, "source_type"))
+        pasted_text = _form_value(form, "pasted_text")
+
+        if action == "ingest":
+            preview, ingest_result = ingest_clipboard_export(
+                pasted_text,
+                _repository(request),
+                batch_title=batch_title,
+                source_type=source_type,
+            )
+            return templates.TemplateResponse(
+                request,
+                "capture.html",
+                _capture_context(
+                    form={
+                        "batch_title": preview.batch_title or "",
+                        "source_type": preview.source_type,
+                        "pasted_text": pasted_text,
+                    },
+                    preview=preview.to_dict(),
+                    ingest_result=ingest_result.to_dict(),
+                    mode="ingest",
+                ),
+            )
+
+        preview = parse_clipboard_export(
+            pasted_text,
+            batch_title=batch_title,
+            source_type=source_type,
+        )
+        return templates.TemplateResponse(
+            request,
+            "capture.html",
+            _capture_context(
+                form={
+                    "batch_title": preview.batch_title or "",
+                    "source_type": preview.source_type,
+                    "pasted_text": pasted_text,
+                },
+                preview=preview.to_dict(),
+                mode="preview",
+            ),
         )
 
     @app.get("/sources/{record_id}")
@@ -182,6 +244,27 @@ def _enrichment_for_template(enrichment: StoredAIEnrichment) -> dict[str, object
         output = {"raw": enrichment.output_json}
     payload["output"] = output
     return payload
+
+
+def _capture_context(
+    *,
+    form: dict[str, str] | None = None,
+    preview: dict[str, object] | None = None,
+    ingest_result: dict[str, object] | None = None,
+    mode: str | None = None,
+) -> dict[str, object]:
+    return {
+        "active": "capture",
+        "form": form
+        or {
+            "batch_title": "",
+            "source_type": DEFAULT_CLIPBOARD_SOURCE_TYPE,
+            "pasted_text": "",
+        },
+        "preview": preview,
+        "ingest_result": ingest_result,
+        "mode": mode,
+    }
 
 
 app = create_app()
