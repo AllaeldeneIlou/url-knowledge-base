@@ -75,6 +75,27 @@ class URLRecordOccurrenceInsertResult:
 
 
 @dataclass(frozen=True)
+class StoredLatestIngestRun:
+    id: int
+    source_file: str
+    input_count: int
+    valid_count: int
+    inserted_count: int
+    duplicate_count: int
+    malformed_count: int
+    failed_count: int
+    status: str
+    created_at: str
+
+
+@dataclass(frozen=True)
+class MultiOccurrenceURLRecord:
+    url_record_id: int
+    domain: str
+    occurrence_count: int
+
+
+@dataclass(frozen=True)
 class StoredAIEnrichment:
     id: int
     run_id: str
@@ -860,6 +881,181 @@ class SQLiteURLRepository:
         with self._connect() as connection:
             return int(connection.execute("SELECT COUNT(*) FROM ai_enrichments").fetchone()[0])
 
+    def count_ingest_runs(self) -> int:
+        with self._connect() as connection:
+            return int(connection.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0])
+
+    def source_occurrences_by_format(self) -> dict[str, int]:
+        return self._grouped_count(
+            """
+            SELECT source_format AS name, COUNT(*) AS count
+            FROM source_occurrences
+            GROUP BY source_format
+            ORDER BY count DESC, name ASC
+            """
+        )
+
+    def url_records_by_review_status(self) -> dict[str, int]:
+        return self._grouped_count(
+            """
+            SELECT review_status AS name, COUNT(*) AS count
+            FROM url_records
+            GROUP BY review_status
+            ORDER BY count DESC, name ASC
+            """
+        )
+
+    def ai_enrichments_by_status(self) -> dict[str, int]:
+        return self._grouped_count(
+            """
+            SELECT status AS name, COUNT(*) AS count
+            FROM ai_enrichments
+            GROUP BY status
+            ORDER BY count DESC, name ASC
+            """
+        )
+
+    def count_distinct_enriched_url_records(self) -> int:
+        with self._connect() as connection:
+            return int(
+                connection.execute(
+                    "SELECT COUNT(DISTINCT url_record_id) FROM ai_enrichments"
+                ).fetchone()[0]
+            )
+
+    def ingest_failure_summary(self) -> tuple[int, int, dict[str, int]]:
+        with self._connect() as connection:
+            totals = connection.execute(
+                """
+                SELECT
+                    COALESCE(SUM(failed_count), 0) AS failed_count,
+                    COALESCE(SUM(malformed_count), 0) AS malformed_count
+                FROM ingest_runs
+                """
+            ).fetchone()
+            rows = connection.execute(
+                """
+                SELECT error_class AS name, COALESCE(SUM(failed_count), 0) AS count
+                FROM ingest_runs
+                WHERE error_class IS NOT NULL
+                GROUP BY error_class
+                ORDER BY count DESC, name ASC
+                """
+            ).fetchall()
+
+        return (
+            int(totals["failed_count"]),
+            int(totals["malformed_count"]),
+            {row["name"]: int(row["count"]) for row in rows},
+        )
+
+    def latest_ingest_runs(self, limit: int) -> list[StoredLatestIngestRun]:
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    source_file,
+                    input_count,
+                    valid_count,
+                    inserted_count,
+                    duplicate_count,
+                    malformed_count,
+                    failed_count,
+                    status,
+                    created_at
+                FROM ingest_runs
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
+        return [
+            StoredLatestIngestRun(
+                id=row["id"],
+                source_file=row["source_file"],
+                input_count=row["input_count"],
+                valid_count=row["valid_count"],
+                inserted_count=row["inserted_count"],
+                duplicate_count=row["duplicate_count"],
+                malformed_count=row["malformed_count"],
+                failed_count=row["failed_count"],
+                status=row["status"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    def top_domains(self, limit: int) -> list[tuple[str, int]]:
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT domain, COUNT(*) AS count
+                FROM url_records
+                GROUP BY domain
+                ORDER BY count DESC, domain ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
+        return [(row["domain"], int(row["count"])) for row in rows]
+
+    def count_records_with_multiple_occurrences(self) -> int:
+        with self._connect() as connection:
+            return int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT url_record_id
+                        FROM source_occurrences
+                        GROUP BY url_record_id
+                        HAVING COUNT(*) > 1
+                    )
+                    """
+                ).fetchone()[0]
+            )
+
+    def top_records_with_multiple_occurrences(
+        self, limit: int
+    ) -> list[MultiOccurrenceURLRecord]:
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    r.id AS url_record_id,
+                    r.domain,
+                    COUNT(o.id) AS occurrence_count
+                FROM url_records r
+                JOIN source_occurrences o ON o.url_record_id = r.id
+                GROUP BY r.id, r.domain
+                HAVING COUNT(o.id) > 1
+                ORDER BY occurrence_count DESC, r.id ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
+        return [
+            MultiOccurrenceURLRecord(
+                url_record_id=row["url_record_id"],
+                domain=row["domain"],
+                occurrence_count=int(row["occurrence_count"]),
+            )
+            for row in rows
+        ]
+
     def count_source_occurrences(self) -> int:
         with self._connect() as connection:
             return int(connection.execute("SELECT COUNT(*) FROM source_occurrences").fetchone()[0])
@@ -867,6 +1063,11 @@ class SQLiteURLRepository:
     def count_url_records(self) -> int:
         with self._connect() as connection:
             return int(connection.execute("SELECT COUNT(*) FROM url_records").fetchone()[0])
+
+    def _grouped_count(self, query: str) -> dict[str, int]:
+        with self._connect() as connection:
+            rows = connection.execute(query).fetchall()
+        return {row["name"]: int(row["count"]) for row in rows}
 
     def _connect(self) -> sqlite3.Connection:
         if self.database_path == ":memory:":

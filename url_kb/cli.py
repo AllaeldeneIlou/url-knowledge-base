@@ -21,6 +21,12 @@ from url_kb.ingest.service import (
     ingest_batch,
     ingest_private_corpus_csvs,
 )
+from url_kb.metrics.service import (
+    DEFAULT_LATEST_RUNS_LIMIT,
+    DEFAULT_MULTI_OCCURRENCE_LIMIT,
+    DEFAULT_TOP_DOMAINS_LIMIT,
+    corpus_metrics,
+)
 from url_kb.search.service import search_sources, update_review_status
 from url_kb.storage.sqlite_repo import ENRICHMENT_REVIEW_STATUSES, SQLiteURLRepository
 
@@ -135,6 +141,20 @@ def main() -> None:
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
         return
 
+    if args.command == "corpus_metrics":
+        repository = SQLiteURLRepository.from_database_url(args.database_url)
+        try:
+            result = corpus_metrics(
+                repository,
+                latest_runs_limit=args.latest_runs_limit,
+                top_domains_limit=args.top_domains_limit,
+                multi_occurrence_limit=args.multi_occurrence_limit,
+            )
+        except ValueError as error:
+            parser.error(str(error))
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return
+
     parser.print_help()
 
 
@@ -158,7 +178,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     private_corpus_parser = subparsers.add_parser(
         "ingest_private_corpus",
-        help="Ingest supported private URL corpus CSV sources into a local ignored DB",
+        help="Ingest supported private URL corpus sources into a local ignored DB",
     )
     private_corpus_parser.add_argument(
         "--corpus-path",
@@ -334,6 +354,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     review_enrichment_parser.add_argument("--note", help="Reviewer note")
     review_enrichment_parser.add_argument(
+        "--database-url",
+        default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
+        help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
+    )
+
+    metrics_parser = subparsers.add_parser(
+        "corpus_metrics",
+        help="Report aggregate corpus health metrics without raw URL lists",
+    )
+    metrics_parser.add_argument(
+        "--latest-runs-limit",
+        type=int,
+        default=DEFAULT_LATEST_RUNS_LIMIT,
+        help=f"Maximum latest ingest runs to include. Defaults to {DEFAULT_LATEST_RUNS_LIMIT}",
+    )
+    metrics_parser.add_argument(
+        "--top-domains-limit",
+        type=int,
+        default=DEFAULT_TOP_DOMAINS_LIMIT,
+        help=f"Maximum top domains to include. Defaults to {DEFAULT_TOP_DOMAINS_LIMIT}",
+    )
+    metrics_parser.add_argument(
+        "--multi-occurrence-limit",
+        type=int,
+        default=DEFAULT_MULTI_OCCURRENCE_LIMIT,
+        help=(
+            "Maximum multi-occurrence record examples to include. Defaults to "
+            f"{DEFAULT_MULTI_OCCURRENCE_LIMIT}"
+        ),
+    )
+    metrics_parser.add_argument(
         "--database-url",
         default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
         help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
