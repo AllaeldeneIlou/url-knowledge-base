@@ -55,6 +55,26 @@ class StoredIngestRun:
 
 
 @dataclass(frozen=True)
+class URLRecordOccurrenceInput:
+    url: NormalizedURL
+    source_file: str
+    source_format: str
+    title: str | None = None
+    original_label: str | None = None
+    source_type: str | None = None
+    raw_imported_status: str | None = None
+    source_section: str | None = None
+    row_number: int | None = None
+    block_number: int | None = None
+
+
+@dataclass(frozen=True)
+class URLRecordOccurrenceInsertResult:
+    inserted: bool
+    record_id: int
+
+
+@dataclass(frozen=True)
 class StoredAIEnrichment:
     id: int
     run_id: str
@@ -290,6 +310,87 @@ class SQLiteURLRepository:
                 ),
             ).fetchone()["id"]
             return False, int(existing_id)
+
+    def insert_url_records_with_occurrences(
+        self, entries: list[URLRecordOccurrenceInput]
+    ) -> list[URLRecordOccurrenceInsertResult]:
+        results: list[URLRecordOccurrenceInsertResult] = []
+
+        with self._connect() as connection:
+            for entry in entries:
+                cursor = connection.execute(
+                    """
+                    INSERT OR IGNORE INTO url_records (
+                        original_url,
+                        canonical_url,
+                        domain,
+                        url_hash,
+                        source_file,
+                        title,
+                        original_label,
+                        source_type,
+                        raw_imported_status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        entry.url.original_url,
+                        entry.url.canonical_url,
+                        entry.url.domain,
+                        entry.url.url_hash,
+                        entry.source_file,
+                        entry.title,
+                        entry.original_label,
+                        entry.source_type,
+                        entry.raw_imported_status,
+                    ),
+                )
+                inserted = cursor.rowcount == 1
+                if inserted:
+                    record_id = int(cursor.lastrowid)
+                else:
+                    record_id = int(
+                        connection.execute(
+                            "SELECT id FROM url_records WHERE canonical_url = ? OR url_hash = ?",
+                            (entry.url.canonical_url, entry.url.url_hash),
+                        ).fetchone()["id"]
+                    )
+
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO source_occurrences (
+                        url_record_id,
+                        source_file,
+                        source_format,
+                        original_url,
+                        original_label,
+                        source_section,
+                        row_number,
+                        block_number,
+                        raw_imported_status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record_id,
+                        entry.source_file,
+                        entry.source_format,
+                        entry.url.original_url,
+                        entry.original_label,
+                        entry.source_section,
+                        entry.row_number,
+                        entry.block_number,
+                        entry.raw_imported_status,
+                    ),
+                )
+                results.append(
+                    URLRecordOccurrenceInsertResult(
+                        inserted=inserted,
+                        record_id=record_id,
+                    )
+                )
+
+        return results
 
     def record_ingest_run(
         self,

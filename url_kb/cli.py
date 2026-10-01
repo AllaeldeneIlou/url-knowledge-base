@@ -16,11 +16,17 @@ from url_kb.enrich.service import (
     show_enrichment,
 )
 from url_kb.export.source_packet import export_source_packet
-from url_kb.ingest.service import ingest_batch
+from url_kb.ingest.service import (
+    PRIVATE_CORPUS_CSV_PROFILES,
+    ingest_batch,
+    ingest_private_corpus_csvs,
+)
 from url_kb.search.service import search_sources, update_review_status
 from url_kb.storage.sqlite_repo import ENRICHMENT_REVIEW_STATUSES, SQLiteURLRepository
 
 DEFAULT_DATABASE_URL = "sqlite:///./data/url_kb.sqlite3"
+DEFAULT_PRIVATE_CORPUS_PATH = Path("private/url_corpus")
+DEFAULT_PRIVATE_DATABASE_URL = "sqlite:///./data/private_url_kb.sqlite3"
 
 
 def main() -> None:
@@ -30,6 +36,19 @@ def main() -> None:
     if args.command == "ingest_batch":
         repository = SQLiteURLRepository.from_database_url(args.database_url)
         result = ingest_batch(args.csv_path, repository)
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return
+
+    if args.command == "ingest_private_corpus":
+        repository = SQLiteURLRepository.from_database_url(args.database_url)
+        try:
+            result = ingest_private_corpus_csvs(
+                args.corpus_path,
+                repository,
+                profiles=args.profile,
+            )
+        except (FileNotFoundError, ValueError) as error:
+            parser.error(str(error))
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
         return
 
@@ -135,6 +154,34 @@ def build_parser() -> argparse.ArgumentParser:
         "--database-url",
         default=os.environ.get("URL_KB_DATABASE_URL", DEFAULT_DATABASE_URL),
         help="SQLite database URL, for example sqlite:///./data/url_kb.sqlite3",
+    )
+
+    private_corpus_parser = subparsers.add_parser(
+        "ingest_private_corpus",
+        help="Ingest supported private URL corpus CSV sources into a local ignored DB",
+    )
+    private_corpus_parser.add_argument(
+        "--corpus-path",
+        type=Path,
+        default=Path(os.environ.get("URL_KB_PRIVATE_CORPUS_PATH", DEFAULT_PRIVATE_CORPUS_PATH)),
+        help="Private URL corpus directory. Defaults to private/url_corpus.",
+    )
+    private_corpus_parser.add_argument(
+        "--profile",
+        action="append",
+        choices=sorted(PRIVATE_CORPUS_CSV_PROFILES),
+        help=(
+            "CSV profile to ingest. May be repeated. Defaults to master_csv and "
+            "notion_csv."
+        ),
+    )
+    private_corpus_parser.add_argument(
+        "--database-url",
+        default=os.environ.get("URL_KB_PRIVATE_DATABASE_URL", DEFAULT_PRIVATE_DATABASE_URL),
+        help=(
+            "SQLite database URL for private corpus data. Defaults to "
+            "sqlite:///./data/private_url_kb.sqlite3"
+        ),
     )
 
     search_parser = subparsers.add_parser("search_sources", help="Search persisted URL records")

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from url_kb.ingest.service import ingest_batch
+from url_kb.ingest.service import ingest_batch, ingest_private_corpus_csvs
 from url_kb.storage.sqlite_repo import SQLiteURLRepository
 
 
@@ -89,3 +89,69 @@ def test_ingest_batch_does_not_duplicate_source_occurrences_on_reingest(tmp_path
     assert second_result.duplicate_count == 3
     assert repository.count_url_records() == 2
     assert repository.count_source_occurrences() == first_occurrence_count
+
+
+def test_ingest_private_corpus_csvs_imports_supported_real_corpus_profiles(
+    tmp_path: Path,
+):
+    corpus_path = tmp_path / "corpus"
+    corpus_path.mkdir()
+    (corpus_path / "master_url_database.csv").write_text(
+        "id,raw_url,clean_url,domain,source_file,date_added,macro_area,"
+        "subtopic,source_type,technical_depth,strategic_relevance,status,notes\n"
+        "1,https://example.com/cloud,https://example.com/cloud,"
+        "example.com,seed.txt,2026-01-01,Cloud,,documentation,,,TO_REVIEW,\n"
+        "2,not a url,,example.com,seed.txt,2026-01-01,Cloud,,documentation,,,TO_REVIEW,\n",
+        encoding="utf-8",
+    )
+    (corpus_path / "notion_second_brain_links.csv").write_text(
+        "Name,URL,Domain,Root Domain,Site Group,URL Pattern,PARA,Project,Area,"
+        "Resource,Topic,Source Type,Content Format,Content Bucket,Status,"
+        "CODE Stage,Review Queue,Review Priority\n"
+        "Cloud Duplicate,https://example.com/cloud,example.com,example.com,"
+        "example,docs,Resource,,Cloud,,Cloud,documentation,guide,"
+        "Infrastructure,TO_REVIEW,,Review Queue,P1\n"
+        "Kubernetes Guide,https://kubernetes.io/docs/home/,kubernetes.io,"
+        "kubernetes.io,kubernetes,docs,Resource,,Cloud,,Kubernetes,"
+        "documentation,guide,Infrastructure,TO_REVIEW,,Review Queue,P1\n",
+        encoding="utf-8",
+    )
+    repository = SQLiteURLRepository(tmp_path / "url_kb.sqlite3")
+
+    result = ingest_private_corpus_csvs(corpus_path, repository)
+
+    assert result.input_count == 4
+    assert result.valid_count == 3
+    assert result.inserted_count == 2
+    assert result.duplicate_count == 1
+    assert result.failed_count == 1
+    assert repository.count_url_records() == 2
+    assert repository.count_source_occurrences() == 3
+    assert result.files[0].error_reasons == {"URL must use http or https": 1}
+
+    occurrences = repository.list_source_occurrences()
+    assert {occurrence.source_format for occurrence in occurrences} == {
+        "csv_master_url_database",
+        "csv_url_export",
+    }
+    assert any(occurrence.source_section == "Cloud" for occurrence in occurrences)
+    assert any(occurrence.source_section == "Review Queue" for occurrence in occurrences)
+
+
+def test_ingest_private_corpus_csvs_can_select_one_profile(tmp_path: Path):
+    corpus_path = tmp_path / "corpus"
+    corpus_path.mkdir()
+    (corpus_path / "master_url_database.csv").write_text(
+        "id,raw_url,clean_url,domain,source_file,date_added,macro_area,"
+        "subtopic,source_type,technical_depth,strategic_relevance,status,notes\n"
+        "1,https://example.com/cloud,https://example.com/cloud,"
+        "example.com,seed.txt,2026-01-01,Cloud,,documentation,,,TO_REVIEW,\n",
+        encoding="utf-8",
+    )
+    repository = SQLiteURLRepository(tmp_path / "url_kb.sqlite3")
+
+    result = ingest_private_corpus_csvs(corpus_path, repository, profiles=["master_csv"])
+
+    assert result.input_count == 1
+    assert result.inserted_count == 1
+    assert result.files[0].profile == "master_csv"
