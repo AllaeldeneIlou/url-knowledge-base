@@ -53,6 +53,23 @@ class StoredIngestRun:
     status: str
 
 
+@dataclass(frozen=True)
+class StoredAIEnrichment:
+    id: int
+    run_id: str
+    url_record_id: int
+    provider: str
+    model: str
+    prompt_version: str
+    input_hash: str
+    status: str
+    output_json: str
+    token_input_count: int | None
+    token_output_count: int | None
+    estimated_cost_usd: float | None
+    error_class: str | None
+
+
 class SQLiteURLRepository:
     """Small sqlite3 repository for deterministic local persistence."""
 
@@ -124,9 +141,28 @@ class SQLiteURLRepository:
                     COALESCE(block_number, -1),
                     original_url
                 );
+
+                CREATE TABLE IF NOT EXISTS ai_enrichments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    url_record_id INTEGER NOT NULL,
+                    provider TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    prompt_version TEXT NOT NULL,
+                    input_hash TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending_review',
+                    output_json TEXT NOT NULL,
+                    token_input_count INTEGER,
+                    token_output_count INTEGER,
+                    estimated_cost_usd REAL,
+                    error_class TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (url_record_id) REFERENCES url_records(id) ON DELETE CASCADE
+                );
                 """
             )
             self._ensure_url_record_columns(connection)
+            self._ensure_ai_enrichment_columns(connection)
 
     def insert_url_record(
         self,
@@ -514,6 +550,87 @@ class SQLiteURLRepository:
 
         return grouped
 
+    def insert_ai_enrichment(
+        self,
+        *,
+        run_id: str,
+        url_record_id: int,
+        provider: str,
+        model: str,
+        prompt_version: str,
+        input_hash: str,
+        status: str,
+        output_json: str,
+        token_input_count: int | None = None,
+        token_output_count: int | None = None,
+        estimated_cost_usd: float | None = None,
+        error_class: str | None = None,
+    ) -> int:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO ai_enrichments (
+                    run_id,
+                    url_record_id,
+                    provider,
+                    model,
+                    prompt_version,
+                    input_hash,
+                    status,
+                    output_json,
+                    token_input_count,
+                    token_output_count,
+                    estimated_cost_usd,
+                    error_class
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    url_record_id,
+                    provider,
+                    model,
+                    prompt_version,
+                    input_hash,
+                    status,
+                    output_json,
+                    token_input_count,
+                    token_output_count,
+                    estimated_cost_usd,
+                    error_class,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def list_ai_enrichments(self) -> list[StoredAIEnrichment]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    run_id,
+                    url_record_id,
+                    provider,
+                    model,
+                    prompt_version,
+                    input_hash,
+                    status,
+                    output_json,
+                    token_input_count,
+                    token_output_count,
+                    estimated_cost_usd,
+                    error_class
+                FROM ai_enrichments
+                ORDER BY id
+                """
+            ).fetchall()
+
+        return [_stored_ai_enrichment_from_row(row) for row in rows]
+
+    def count_ai_enrichments(self) -> int:
+        with self._connect() as connection:
+            return int(connection.execute("SELECT COUNT(*) FROM ai_enrichments").fetchone()[0])
+
     def count_source_occurrences(self) -> int:
         with self._connect() as connection:
             return int(connection.execute("SELECT COUNT(*) FROM source_occurrences").fetchone()[0])
@@ -548,6 +665,21 @@ class SQLiteURLRepository:
             if column_name not in existing_columns:
                 connection.execute(
                     f"ALTER TABLE url_records ADD COLUMN {column_name} {column_type}"
+                )
+
+    def _ensure_ai_enrichment_columns(self, connection: sqlite3.Connection) -> None:
+        existing_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(ai_enrichments)").fetchall()
+        }
+        column_definitions = {
+            "run_id": "TEXT",
+        }
+
+        for column_name, column_type in column_definitions.items():
+            if column_name not in existing_columns:
+                connection.execute(
+                    f"ALTER TABLE ai_enrichments ADD COLUMN {column_name} {column_type}"
                 )
 
 
@@ -603,4 +735,22 @@ def _stored_source_occurrence_from_row(row: sqlite3.Row) -> StoredSourceOccurren
         row_number=row["row_number"],
         block_number=row["block_number"],
         raw_imported_status=row["raw_imported_status"],
+    )
+
+
+def _stored_ai_enrichment_from_row(row: sqlite3.Row) -> StoredAIEnrichment:
+    return StoredAIEnrichment(
+        id=row["id"],
+        run_id=row["run_id"],
+        url_record_id=row["url_record_id"],
+        provider=row["provider"],
+        model=row["model"],
+        prompt_version=row["prompt_version"],
+        input_hash=row["input_hash"],
+        status=row["status"],
+        output_json=row["output_json"],
+        token_input_count=row["token_input_count"],
+        token_output_count=row["token_output_count"],
+        estimated_cost_usd=row["estimated_cost_usd"],
+        error_class=row["error_class"],
     )
