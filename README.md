@@ -27,6 +27,33 @@ URL collections
 The current implementation is a local MVP focused on reliable capture, traceability,
 and review before adding heavier AI or agentic processing.
 
+## MVP Flow
+
+```mermaid
+flowchart LR
+    A[Browser tabs<br>OneTab exports<br>Markdown links<br>CSV and text files] --> B[Capture and ingestion]
+    B --> C[Deterministic core]
+    C --> C1[Parse]
+    C --> C2[Normalize URLs]
+    C --> C3[Extract domains]
+    C --> C4[Deduplicate]
+    C --> D[(SQLite knowledge base)]
+    D --> E[Provenance layer<br>source, format, section, row, label]
+    D --> F[Local review console]
+    F --> F1[Overview metrics]
+    F --> F2[Search and filters]
+    F --> F3[Record detail]
+    F --> F4[Enrichment review]
+    D --> G[Markdown source packets]
+    G --> H[Reusable research context<br>docs, study notes, implementation briefs]
+    D -. future bounded tools .-> I[Agentic research layer]
+    I -. retrieve, fetch, synthesize, validate .-> H
+```
+
+The MVP proves the lower layer first: capture, persistence, provenance, review,
+metrics, and export. The future agentic layer should use this substrate through
+bounded tools instead of bypassing it.
+
 ## Features
 
 | Area | What it does |
